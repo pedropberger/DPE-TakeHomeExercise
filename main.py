@@ -131,4 +131,4 @@ new_order = ['Film','Producer(s)','Production Company(s)','Winner','year','year_
 oscar = oscar[new_order]
 
 #Exporting CSV
-oscar.to_csv('output/oscar.csv')
+oscar.to_csv('oscar.csv')
