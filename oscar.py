@@ -3,19 +3,42 @@ import pandas as pd
 import numpy as np
 import re
 
+### Parameters
 
 # URL to fetch data
 url = "http://oscars.yipitdata.com/"
 
-# Fetch data from URL
-response = requests.get(url)
-data = response.json()
+# Conversion rates (example values, adjust if necessary)
+conversion_rates = {
+    '£': 1.35,   # Example: 1 GBP = 1.35 USD
+    '€': 1.18,   # Example: 1 EUR = 1.18 USD
+    '₤': 1.35    # Treating '₤' as GBP for now
+}
 
-# Use json_normalize to flatten the JSON structure
-oscar = pd.json_normalize(data['results'], 'films', ['year'])
+
+### Functions
+
+def fetch_oscar_data(url):
+    # Function that takes a URL and returns a dataframe
+    try:
+        # Fetch data from the URL
+        response = requests.get(url)
+        response.raise_for_status()  # Raise error for bad responses
+        data = response.json()
+
+        # Use json_normalize to flatten the JSON structure
+        df = pd.json_normalize(data['results'], 'films', ['year'])
+
+        return df
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data: {e}")
+        return None
+
 
 
 def fetch_budget(url):
+    # Function that takes a URL from oscar dataframe and returns a column with the budget
     try:
         # Get the JSON content from the URL
         response = requests.get(url)
@@ -36,19 +59,13 @@ def add_budget_column(df):
     df['Budget'] = df['Detail URL'].apply(fetch_budget)
     return df
 
-oscar = add_budget_column(oscar)
-# The 'oscar' dataframe will now have a new 'Budget' column with the extracted data
 
+def choose_or_alternatives(df, column_name):
+    # Removes all characters from 'or' including itself in the specified column, and create a temporary column to work with
+    # Create a new temporary column with '_aux' suffix and apply the string split operation
+    df[column_name + '_aux'] = df[column_name].str.split('or', expand=True)[0]
+    return df
 
-# Conversion rates (example values, adjust if necessary)
-conversion_rates = {
-    '£': 1.35,   # Example: 1 GBP = 1.35 USD
-    '€': 1.18,   # Example: 1 EUR = 1.18 USD
-    '₤': 1.35    # Treating '₤' as GBP for now
-}
-
-# Removes all characters from 'or' including itself in the specified column, and create a temporary column to work with
-oscar['Budget_aux'] = oscar['Budget'].str.split('or', expand = True)[0]
 
 # Helper function to convert non-USD values to USD
 def convert_to_usd(amount, currency_symbol):
@@ -104,13 +121,6 @@ def clean_budget(budget):
     return int(budget_value)
 
 
-# Apply cleaning function to 'Budget' column
-oscar['Budget_converted_to_USD'] = oscar['Budget_aux'].apply(clean_budget)
-
-# Drop auxiliar columns
-oscar.drop('Budget_aux', axis=1, inplace=True)
-
-
 # Function to extract 'year_simple' and 'edition'
 def clean_year_column(row):
     # Extract the year part (e.g., '1927 / 28' -> '1927', '1928', etc.)
@@ -123,10 +133,28 @@ def clean_year_column(row):
     
     return pd.Series([year_simple, edition])
 
+
+### The JOB
+
+# Get the oscar data from url
+oscar = fetch_oscar_data(url)
+
+# The 'oscar' dataframe will now have a new 'Budget' column with the extracted data
+oscar = add_budget_column(oscar)
+
+# Choose the fist option when we have budget alternatives (not a range)
+oscar = choose_or_alternatives(oscar, 'Budget')
+
+# Apply cleaning function to 'Budget' column
+oscar['Budget_converted_to_USD'] = oscar['Budget_aux'].apply(clean_budget)
+
+# Drop auxiliar columns
+oscar.drop('Budget_aux', axis=1, inplace=True)
+
 # Apply the function to the 'year' column
 oscar[['year_simple', 'Edition']] = oscar['year'].apply(clean_year_column)
 
-# Reordering for a more intuitive order IMO
+# Reordering for a more intuitive order
 new_order = ['Film','Producer(s)','Production Company(s)','Winner','year','year_simple','Edition','Budget','Budget_converted_to_USD', 'Detail URL','Wiki URL']
 oscar = oscar[new_order]
 
